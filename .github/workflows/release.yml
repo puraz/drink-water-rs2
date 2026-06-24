@@ -8,56 +8,85 @@ env:
   CARGO_TERM_COLOR: always
 
 jobs:
-  release:
-    name: Build & Publish
-    runs-on: macos-latest
-    permissions:
-      contents: write
-
+  version:
+    name: Extract & verify version
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.ver.outputs.tag }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Extract version
-        id: version
+      - id: ver
         run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
-
       - name: Verify Cargo.toml version matches tag
         run: |
           CARGO_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
-          if [ "$CARGO_VERSION" != "${{ steps.version.outputs.tag }}" ]; then
-            echo "::error::Cargo.toml version ($CARGO_VERSION) != tag version (${{ steps.version.outputs.tag }})"
+          if [ "$CARGO_VERSION" != "${{ steps.ver.outputs.tag }}" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) != tag (${{ steps.ver.outputs.tag }})"
             exit 1
           fi
           echo "Version verified: v$CARGO_VERSION"
 
+  macos:
+    name: Build macOS .app
+    needs: version
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-
-      - name: Build release binaries
-        run: cargo build --release
-
-      - name: Generate icon
-        run: cargo run --release --bin gen-icons
-
-      - name: Bundle macOS .app
-        run: bash scripts/bundle.sh "${{ steps.version.outputs.tag }}"
-
-      - name: Create archive
-        run: |
-          cd target
-          zip -r "喝水提醒-${{ steps.version.outputs.tag }}.zip" "喝水提醒.app"
-
-      - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v2
+      - run: cargo build --release
+      - run: cargo run --release --bin gen-icons
+      - run: bash scripts/bundle.sh "${{ needs.version.outputs.tag }}"
+      - run: cd target && zip -r "喝水提醒-${{ needs.version.outputs.tag }}.zip" "喝水提醒.app"
+      - uses: actions/upload-artifact@v4
         with:
-          name: 喝水提醒 ${{ steps.version.outputs.tag }}
-          body: |
-            ## 🚰 喝水提醒 ${{ steps.version.outputs.tag }}
+          name: macos
+          path: target/喝水提醒-*.zip
 
-            ### 📥 安装方法
+  windows:
+    name: Build Windows portable
+    needs: version
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release
+      - name: Create portable ZIP
+        shell: pwsh
+        run: |
+          cd target/release
+          Compress-Archive -Path drink-water-rs2.exe, drink-water-settings.exe `
+                           -DestinationPath "../DrinkWater-${{ needs.version.outputs.tag }}-x86_64-win.zip"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows
+          path: target/DrinkWater-*.zip
+
+  release:
+    name: Publish GitHub Release
+    needs: [version, macos, windows]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: List artifacts
+        run: ls -R
+      - uses: softprops/action-gh-release@v2
+        with:
+          name: 喝水提醒 ${{ needs.version.outputs.tag }}
+          body: |
+            ## 🚰 喝水提醒 ${{ needs.version.outputs.tag }}
+
+            ### macOS
             1. 下载 `喝水提醒-*.zip`
             2. 解压后将 `喝水提醒.app` 拖入 `/Applications`
             3. 首次运行：右键 → 打开（Gatekeeper 提示）
+
+            ### Windows
+            1. 下载 `DrinkWater-*-x86_64-win.zip`
+            2. 解压到任意目录，运行 `drink-water-rs2.exe`
 
             ### 🛠 功能
             - 托盘图标定时提醒喝水
@@ -65,6 +94,8 @@ jobs:
             - 今日喝水统计展示
             - 设置界面窗口失焦自动保存
             - 配置文件热重载，无需重启
-          files: target/喝水提醒-*.zip
+          files: |
+            macos/*.zip
+            windows/*.zip
           draft: true
           generate_release_notes: false
