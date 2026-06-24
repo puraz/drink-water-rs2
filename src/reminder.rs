@@ -164,6 +164,7 @@ fn send_notification(summary: &str, body: &str, timeout_ms: u32) {
     let mut n = Notification::new();
     n.summary(summary);
     n.body(body);
+    n.app_id("drink-water-rs2");
     n.appname("喝水提醒");
     n.timeout(notify_rust::Timeout::Milliseconds(timeout_ms));
     #[cfg(target_os = "linux")]

@@ -1,3 +1,5 @@
+#![windows_subsystem = "windows"]
+
 //! Settings window for Drink Water Reminder — built with Iced.
 //!
 //! Runs as a separate binary so its event loop (winit) doesn't conflict
