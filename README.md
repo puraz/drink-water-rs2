@@ -68,19 +68,6 @@ scripts/
   bundle.sh            # macOS .app 打包脚本
 ```
 
-## 发版
-
-打 tag 推送即可触发 GitHub Actions 自动构建发布：
-
-```bash
-# 先改 Cargo.toml 里的 version
-git commit -m "bump version to x.y.z"
-git tag vx.y.z
-git push origin master --tags
-```
-
-CI 会自动构建 macOS .app bundle 和 Windows portable zip，发布到 GitHub Releases（Draft 状态，手动确认发布）。
-
 ## 依赖
 
 - [tray-icon](https://crates.io/crates/tray-icon) — 托盘图标
