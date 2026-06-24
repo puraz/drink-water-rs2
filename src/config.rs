@@ -33,7 +33,7 @@ impl Default for Config {
 
 impl Config {
     /// Path to config file
-    fn path() -> PathBuf {
+    pub fn path() -> PathBuf {
         let mut path = dirs::config_dir().unwrap_or_else(|| PathBuf::from("."));
         path.push("drink-water-rs2");
         path.push("config.json");
@@ -47,12 +47,12 @@ impl Config {
             match std::fs::read_to_string(&path) {
                 Ok(content) => match serde_json::from_str(&content) {
                     Ok(config) => {
-                        log::info!("Config loaded from {:?}", path);
+                        log::info!("配置已加载 {:?}", path);
                         return config;
                     }
-                    Err(e) => log::warn!("Failed to parse config: {e}, using defaults"),
+                    Err(e) => log::warn!("配置文件解析失败: {e}，使用默认值"),
                 },
-                Err(e) => log::warn!("Failed to read config: {e}, using defaults"),
+                Err(e) => log::warn!("配置文件读取失败: {e}，使用默认值"),
             }
         }
         let config = Config::default();
@@ -68,10 +68,10 @@ impl Config {
         }
         match serde_json::to_string_pretty(self) {
             Ok(content) => match std::fs::write(&path, content) {
-                Ok(_) => log::info!("Config saved to {:?}", path),
-                Err(e) => log::error!("Failed to save config: {e}"),
+                Ok(_) => log::info!("配置已保存 {:?}", path),
+                Err(e) => log::error!("配置保存失败: {e}"),
             },
-            Err(e) => log::error!("Failed to serialize config: {e}"),
+            Err(e) => log::error!("配置序列化失败: {e}"),
         }
     }
 }

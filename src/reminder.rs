@@ -14,6 +14,7 @@ use tao::event_loop::EventLoopProxy;
 pub enum ReminderCommand {
     Reset,
     Snooze(u64),
+    ChangeInterval(u64),
     Quit,
 }
 
@@ -31,11 +32,11 @@ impl Reminder {
         end_hour: u8,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
-        let interval = Duration::from_secs(interval_secs);
+        let mut interval = Duration::from_secs(interval_secs);
 
         thread::spawn(move || {
             log::info!(
-                "Reminder started: interval={interval_secs}s, hours={start_hour}:00–{end_hour}:00"
+                "提醒已启动：间隔={interval_secs}秒，时段={start_hour}:00–{end_hour}:00"
             );
 
             loop {
@@ -45,20 +46,25 @@ impl Reminder {
                 if hour >= start_hour && hour < end_hour {
                     match rx.recv_timeout(interval) {
                         Err(mpsc::RecvTimeoutError::Timeout) => {
-                            log::info!("💧 Time to drink water!");
+                            log::info!("💧 该喝水了！");
                             show_notification("💧 该喝水了！", "保持水分充足，身体才能发挥最佳状态。");
                             let _ = proxy.send_event(UserEvent::TimeToDrink);
                         }
                         Ok(ReminderCommand::Reset) => {
-                            log::info!("↻ Timer reset — restarting interval");
+                            log::info!("↻ 计时器已重置");
                             continue;
                         }
                         Ok(ReminderCommand::Snooze(minutes)) => {
-                            log::info!("⏰ Snoozing for {minutes} min");
+                            log::info!("⏰ 暂停 {minutes} 分钟");
                             show_snooze_notification(minutes);
                             thread::sleep(Duration::from_secs(minutes * 60));
                             show_notification("💧 该喝水了！", "保持水分充足，身体才能发挥最佳状态。");
                             let _ = proxy.send_event(UserEvent::TimeToDrink);
+                        }
+                        Ok(ReminderCommand::ChangeInterval(secs)) => {
+                            log::info!("⏱ 提醒间隔已更新为 {} 秒", secs);
+                            interval = Duration::from_secs(secs);
+                            continue;
                         }
                         Ok(ReminderCommand::Quit)
                         | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -73,7 +79,7 @@ impl Reminder {
                 }
             }
 
-            log::info!("Reminder thread exiting");
+            log::info!("提醒线程退出");
         });
 
         Reminder { sender: tx }
@@ -85,6 +91,10 @@ impl Reminder {
 
     pub fn snooze(&self, minutes: u64) {
         let _ = self.sender.send(ReminderCommand::Snooze(minutes));
+    }
+
+    pub fn change_interval(&self, interval_secs: u64) {
+        let _ = self.sender.send(ReminderCommand::ChangeInterval(interval_secs));
     }
 
     pub fn quit(&self) {
@@ -121,15 +131,15 @@ fn osascript_notify(summary: &str, body: &str) {
     match result {
         Ok(out) => {
             if out.status.success() {
-                log::info!("Notification sent via osascript");
+                log::info!("通过 osascript 发送通知");
             } else {
                 log::error!(
-                    "osascript failed: {}",
+                    "osascript 失败: {}",
                     String::from_utf8_lossy(&out.stderr)
                 );
             }
         }
-        Err(e) => log::error!("osascript error: {e}"),
+        Err(e) => log::error!("osascript 错误: {e}"),
     }
 }
 
@@ -160,8 +170,8 @@ fn send_notification(summary: &str, body: &str, timeout_ms: u32) {
     n.sound_name("message-new-instant");
 
     match n.show() {
-        Ok(_) => log::info!("Notification sent via notify-rust"),
-        Err(e) => log::error!("notify-rust failed: {e}"),
+        Ok(_) => log::info!("通过 notify-rust 发送通知"),
+        Err(e) => log::error!("notify-rust 失败: {e}"),
     }
 }
 

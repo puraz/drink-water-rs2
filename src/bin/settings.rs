@@ -3,37 +3,75 @@
 //! Runs as a separate binary so its event loop (winit) doesn't conflict
 //! with the tray app's event loop (tao).
 
-use iced::widget::{
-    button, column, container, row, text, text_input,
+use iced::theme::Palette;
+use iced::widget::{column, container, row, text, text_input};
+use iced::{
+    application, window, window::icon as window_icon, Alignment, Background, Border, Color, Element,
+    Event, Font, Length, Shadow, Subscription, Task, Theme, Vector,
 };
-use iced::{application, window, window::icon as window_icon, Color, Element, Font, Length, Task};
 
 use drink_water_rs2::config::Config;
 
 fn main() -> iced::Result {
-    // macOS: bring window to front after launch
+    // macOS: bring the window to the front as soon as the process is
+    // registered with the window server. Poll instead of waiting a fixed
+    // 500ms so the window surfaces as fast as the system allows (~100ms).
     #[cfg(target_os = "macos")]
     {
         std::thread::spawn(|| {
-            std::thread::sleep(std::time::Duration::from_millis(500));
-            std::process::Command::new("osascript")
-                .args(&["-e",
-                    "tell application \"System Events\" to set frontmost of every process whose name is \"drink-water-settings\" to true"
-                ])
-                .spawn()
-                .ok();
+            for _ in 0..16 {
+                std::thread::sleep(std::time::Duration::from_millis(40));
+                let brought_front = std::process::Command::new("osascript")
+                    .args([
+                        "-e",
+                        "tell application \"System Events\" to set frontmost of (first process whose name is \"drink-water-settings\") to true",
+                    ])
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false);
+                if brought_front {
+                    break;
+                }
+            }
         });
     }
 
     application("喝水提醒 — 设置", update, view)
+        .theme(|_| water_theme())
+        .subscription(subscription)
         .window(window::Settings {
-            size: iced::Size::new(360.0, 460.0),
+            size: iced::Size::new(380.0, 530.0),
             icon: make_window_icon(),
+            exit_on_close_request: false,
             ..window::Settings::default()
         })
         .default_font(default_font())
         .centered()
         .run()
+}
+
+/// Listen for window focus / close events so we can auto-save.
+fn subscription(_state: &State) -> Subscription<Message> {
+    iced::event::listen_with(|event, _status, _id| match event {
+        Event::Window(window::Event::Focused) => Some(Message::Focused),
+        Event::Window(window::Event::Unfocused) => Some(Message::FocusLost),
+        Event::Window(window::Event::CloseRequested) => Some(Message::CloseRequested),
+        _ => None,
+    })
+}
+
+/// A custom light theme with a water-blue accent.
+fn water_theme() -> Theme {
+    Theme::custom(
+        "水蓝".to_string(),
+        Palette {
+            background: Color::from_rgb8(0xF2, 0xF7, 0xFB),
+            text: Color::from_rgb8(0x1B, 0x2B, 0x34),
+            primary: Color::from_rgb8(0x21, 0x96, 0xD3),
+            success: Color::from_rgb8(0x3F, 0xB6, 0x6B),
+            danger: Color::from_rgb8(0xE5, 0x4B, 0x4B),
+        },
+    )
 }
 
 /// Create a window icon from the water-drop RGBA data
@@ -65,6 +103,9 @@ struct State {
     start_hour_str: String,
     end_hour_str: String,
     error_message: Option<String>,
+    /// Whether the window has been focused at least once — guards against
+    /// a spurious save/exit from an early Unfocused event during launch.
+    has_been_focused: bool,
 }
 
 // ── Messages ──────────────────────────────────────────────────────────────
@@ -76,8 +117,9 @@ enum Message {
     WaterAmountChanged(String),
     StartHourChanged(String),
     EndHourChanged(String),
-    Save,
-    Cancel,
+    Focused,
+    FocusLost,
+    CloseRequested,
 }
 
 // ── Update ─────────────────────────────────────────────────────────────────
@@ -109,18 +151,29 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
             state.error_message = None;
             Task::none()
         }
-        Message::Save => match try_save(state) {
-            Ok(()) => {
-                log::info!("设置已保存");
-                iced::exit()
+        Message::Focused => {
+            log::debug!("窗口获得焦点");
+            state.has_been_focused = true;
+            Task::none()
+        }
+        Message::FocusLost => {
+            // Auto-save when the window loses focus. Persist valid input;
+            // surface a banner (and keep the window) if it's invalid.
+            if state.has_been_focused {
+                match try_save(state) {
+                    Ok(()) => {
+                        state.error_message = None;
+                        log::info!("失焦自动保存");
+                    }
+                    Err(e) => state.error_message = Some(e),
+                }
             }
-            Err(e) => {
-                state.error_message = Some(e);
-                Task::none()
-            }
-        },
-        Message::Cancel => {
-            log::info!("设置已取消");
+            Task::none()
+        }
+        Message::CloseRequested => {
+            // Save a last time on close, then quit.
+            let _ = try_save(state);
+            log::info!("窗口关闭");
             iced::exit()
         }
     }
@@ -129,43 +182,107 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 // ── View ───────────────────────────────────────────────────────────────────
 
 fn view<'a>(state: &'a State) -> Element<'a, Message> {
+    // ── Form card ───────────────────────────────────────────────────────────
     let form = column![
-        text("提醒间隔（分钟）").size(13),
-        text_input("30", &state.interval_str).on_input(Message::IntervalChanged).padding(6),
-        text("稍后提醒（分钟）").size(13),
-        text_input("5", &state.snooze_str).on_input(Message::SnoozeChanged).padding(6),
-        text("每次喝水量（ml）").size(13),
-        text_input("250", &state.water_amount_str).on_input(Message::WaterAmountChanged).padding(6),
-        text("开始提醒时间").size(13),
-        text_input("9", &state.start_hour_str).on_input(Message::StartHourChanged).padding(6),
-        text("结束提醒时间").size(13),
-        text_input("22", &state.end_hour_str).on_input(Message::EndHourChanged).padding(6),
+        field("提醒间隔", "30", &state.interval_str, "分钟", Message::IntervalChanged),
+        field("稍后提醒", "5", &state.snooze_str, "分钟", Message::SnoozeChanged),
+        field("每次喝水量", "250", &state.water_amount_str, "ml", Message::WaterAmountChanged),
+        field("开始提醒时间", "9", &state.start_hour_str, "点", Message::StartHourChanged),
+        field("结束提醒时间", "22", &state.end_hour_str, "点", Message::EndHourChanged),
     ]
-    .spacing(4)
-    .padding(8);
+    .spacing(16);
 
-    let maybe_error: Element<Message> = if let Some(err) = &state.error_message {
-        text(err).color(Color::from_rgb(0.8, 0.2, 0.2)).into()
-    } else {
-        text("").into()
-    };
+    let card = container(form)
+        .padding(22)
+        .width(Length::Fill)
+        .style(card_style);
 
-    let buttons = row![
-        button("取消").on_press(Message::Cancel).padding(6),
-        button("保存").on_press(Message::Save).padding(6),
-    ]
-    .spacing(8);
-
-    let content = column![form, maybe_error, buttons]
-        .spacing(6)
-        .align_x(iced::Alignment::Center)
-        .max_width(400);
+    // ── Assemble ────────────────────────────────────────────────────────────
+    let mut content = column![card].spacing(14).max_width(440);
+    if let Some(err) = &state.error_message {
+        content = content.push(error_banner(err));
+    }
 
     container(content)
         .width(Length::Fill)
+        .height(Length::Fill)
+        .padding(22)
         .center_x(Length::Fill)
-        .padding(8)
+        .center_y(Length::Fill)
         .into()
+}
+
+/// Muted grey used for secondary labels.
+fn muted() -> Color {
+    Color::from_rgb8(0x5C, 0x6B, 0x77)
+}
+
+/// A labeled text input with an optional trailing unit.
+fn field<'a>(
+    label: &'a str,
+    placeholder: &'a str,
+    value: &'a str,
+    unit: &'a str,
+    on_input: fn(String) -> Message,
+) -> Element<'a, Message> {
+    let input = text_input(placeholder, value)
+        .on_input(on_input)
+        .padding(10)
+        .size(15)
+        .width(Length::Fill);
+
+    let input_row: Element<Message> = if unit.is_empty() {
+        input.into()
+    } else {
+        // Fixed-width unit slot keeps every input box the same width
+        // regardless of how wide the unit label ("分钟" / "ml" / "点") is.
+        row![
+            input,
+            text(unit).size(13).color(muted()).width(Length::Fixed(32.0)),
+        ]
+        .spacing(8)
+        .align_y(Alignment::Center)
+        .into()
+    };
+
+    column![text(label).size(13).color(muted()), input_row]
+        .spacing(7)
+        .into()
+}
+
+/// A red banner shown when validation fails.
+fn error_banner(message: &str) -> Element<'_, Message> {
+    container(text(message).size(13).color(Color::WHITE))
+        .padding([9.0, 14.0])
+        .width(Length::Fill)
+        .style(|_theme: &Theme| container::Style {
+            background: Some(Background::Color(Color::from_rgb8(0xE5, 0x4B, 0x4B))),
+            border: Border {
+                color: Color::TRANSPARENT,
+                width: 0.0,
+                radius: 9.0.into(),
+            },
+            ..container::Style::default()
+        })
+        .into()
+}
+
+/// White rounded card with a soft blue shadow.
+fn card_style(_theme: &Theme) -> container::Style {
+    container::Style {
+        background: Some(Background::Color(Color::WHITE)),
+        border: Border {
+            color: Color::from_rgb8(0xDD, 0xE6, 0xED),
+            width: 1.0,
+            radius: 14.0.into(),
+        },
+        shadow: Shadow {
+            color: Color::from_rgba8(0x14, 0x7C, 0xB8, 0.12),
+            offset: Vector::new(0.0, 4.0),
+            blur_radius: 18.0,
+        },
+        ..container::Style::default()
+    }
 }
 
 impl State {
@@ -179,6 +296,7 @@ impl State {
             end_hour_str: cfg.end_hour.to_string(),
             config: cfg,
             error_message: None,
+            has_been_focused: false,
         }
     }
 }
