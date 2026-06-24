@@ -1,0 +1,70 @@
+name: Release
+
+on:
+  push:
+    tags: ['v*']
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  release:
+    name: Build & Publish
+    runs-on: macos-latest
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Extract version
+        id: version
+        run: echo "tag=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      - name: Verify Cargo.toml version matches tag
+        run: |
+          CARGO_VERSION=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml)
+          if [ "$CARGO_VERSION" != "${{ steps.version.outputs.tag }}" ]; then
+            echo "::error::Cargo.toml version ($CARGO_VERSION) != tag version (${{ steps.version.outputs.tag }})"
+            exit 1
+          fi
+          echo "Version verified: v$CARGO_VERSION"
+
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Build release binaries
+        run: cargo build --release
+
+      - name: Generate icon
+        run: cargo run --release --bin gen-icons
+
+      - name: Bundle macOS .app
+        run: bash scripts/bundle.sh "${{ steps.version.outputs.tag }}"
+
+      - name: Create archive
+        run: |
+          cd target
+          zip -r "喝水提醒-${{ steps.version.outputs.tag }}.zip" "喝水提醒.app"
+
+      - name: Publish GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: 喝水提醒 ${{ steps.version.outputs.tag }}
+          body: |
+            ## 🚰 喝水提醒 ${{ steps.version.outputs.tag }}
+
+            ### 📥 安装方法
+            1. 下载 `喝水提醒-*.zip`
+            2. 解压后将 `喝水提醒.app` 拖入 `/Applications`
+            3. 首次运行：右键 → 打开（Gatekeeper 提示）
+
+            ### 🛠 功能
+            - 托盘图标定时提醒喝水
+            - 可自定义提醒间隔、饮水量、工作时段
+            - 今日喝水统计展示
+            - 设置界面窗口失焦自动保存
+            - 配置文件热重载，无需重启
+          files: target/喝水提醒-*.zip
+          draft: true
+          generate_release_notes: false

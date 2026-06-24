@@ -3,13 +3,17 @@
 # Build & bundle 喝水提醒 into a distributable macOS .app
 #
 # Usage:
-#   ./scripts/bundle.sh
+#   ./scripts/bundle.sh [version]
+#
+# Args:
+#   version    Version string for Info.plist (default: 1.0.0)
 #
 # Output:
 #   target/喝水提醒.app        ← ready to zip & share
 
 set -euo pipefail
 
+VERSION="${1:-1.0.0}"
 APP_NAME="喝水提醒"
 IDENTIFIER="com.drinkwater.app"
 BUNDLE_DIR="target/${APP_NAME}.app"
@@ -93,11 +97,10 @@ cat > "${CONTENTS}/Info.plist" <<EOF
     <key>CFBundleName</key>
     <string>${APP_NAME}</string>
     <key>CFBundleDisplayName</key>
-    <string>${APP_NAME}</string>
     <key>CFBundleVersion</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleShortVersionString</key>
-    <string>1.0.0</string>
+    <string>${VERSION}</string>
     <key>CFBundleIconFile</key>
     <string>icon</string>
     <key>LSUIElement</key>
