@@ -113,6 +113,12 @@ cat > "${CONTENTS}/Info.plist" <<EOF
 </plist>
 EOF
 
+# 7. Prepare for distribution: remove quarantine attributes & ad-hoc sign
+#    Without this, macOS Gatekeeper shows "已损坏" for downloaded apps.
+echo "==> Preparing bundle for distribution…"
+xattr -cr "${BUNDLE_DIR}" 2>/dev/null || true
+codesign --force --deep --sign - "${BUNDLE_DIR}" 2>/dev/null || echo "  (ad-hoc signing skipped — not available on this system)"
+
 echo ""
 echo "✅ Done! Bundle created at: ${BUNDLE_DIR}"
 echo ""
