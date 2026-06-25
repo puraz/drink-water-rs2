@@ -37,7 +37,7 @@ jobs:
       - run: cargo build --release
       - run: cargo run --release --bin gen-icons
       - run: bash scripts/bundle.sh "${{ needs.version.outputs.tag }}"
-      - run: cd target && zip -r "喝水提醒-${{ needs.version.outputs.tag }}.zip" "喝水提醒.app"
+      - run: cd target && zip -r "喝水提醒-${{ needs.version.outputs.tag }}-macos.zip" "喝水提醒.app"
       - uses: actions/upload-artifact@v4
         with:
           name: macos
@@ -80,9 +80,9 @@ jobs:
             ## 🚰 喝水提醒 ${{ needs.version.outputs.tag }}
 
             ### macOS
-            1. 下载 `喝水提醒-*.zip`
+            1. 下载 `喝水提醒-*-macos.zip`
             2. 解压后将 `喝水提醒.app` 拖入 `/Applications`
-            3. 首次运行：右键 → 打开（Gatekeeper 提示）
+            3. 首次运行：右键 → 打开（如仍提示损坏，终端执行 `xattr -cr /Applications/喝水提醒.app`）
 
             ### Windows
             1. 下载 `DrinkWater-*-x86_64-win.zip`
@@ -90,8 +90,9 @@ jobs:
 
             ### 🛠 功能
             - 托盘图标定时提醒喝水
-            - 可自定义提醒间隔、饮水量、工作时段
-            - 今日喝水统计展示
+            - 每日喝水目标，菜单栏显示进度
+            - 7 天喝水统计图表（独立窗口）
+            - 勿扰模式：一键静音，图标变灰
             - 设置界面窗口失焦自动保存
             - 配置文件热重载，无需重启
           files: |
