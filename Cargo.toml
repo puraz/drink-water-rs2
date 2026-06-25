@@ -23,6 +23,10 @@ name = "drink-water-settings"
 path = "src/bin/settings.rs"
 
 [[bin]]
+name = "drink-water-stats"
+path = "src/bin/stats.rs"
+
+[[bin]]
 name = "gen-icons"
 path = "src/bin/gen_icons.rs"
 
@@ -41,7 +45,7 @@ chrono = { version = "0.4", features = ["serde"] }
 env_logger = "0.11"
 
 # settings app
-iced = { version = "0.13", default-features = false, features = ["tiny-skia", "wgpu"] }
+iced = { version = "0.13", default-features = false, features = ["tiny-skia", "wgpu", "canvas"] }
 
 # icon generation
 png = "0.17"

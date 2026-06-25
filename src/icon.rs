@@ -1,14 +1,28 @@
-/// Generate a water drop icon programmatically
+/// Generate a blue water drop icon (normal mode)
 pub fn create_water_drop_rgba() -> (Vec<u8>, u32, u32) {
+    create_colored_water_drop_rgba((41, 128, 185), (150, 200, 240), 0.6)
+}
+
+/// Generate a gray water drop icon (DND mode)
+pub fn create_gray_water_drop_rgba() -> (Vec<u8>, u32, u32) {
+    create_colored_water_drop_rgba((160, 160, 160), (200, 200, 200), 0.3)
+}
+
+/// Generate a water drop icon with custom colors.
+///
+/// `base` is the main color, `highlight` is the top-left reflection,
+/// `brightness` controls the highlight intensity (0.0–1.0).
+fn create_colored_water_drop_rgba(
+    base: (u8, u8, u8),
+    highlight: (u8, u8, u8),
+    brightness: f64,
+) -> (Vec<u8>, u32, u32) {
     let width = 64u32;
     let height = 64u32;
     let mut rgba = vec![0u8; (width * height * 4) as usize];
 
-    // Water drop colors
-    let (r, g, b) = (41u8, 128u8, 185u8); // Blue
-    let highlight_r: u8 = 150;
-    let highlight_g: u8 = 200;
-    let highlight_b: u8 = 240;
+    let (r, g, b) = base;
+    let (hl_r, hl_g, hl_b) = highlight;
 
     let cx = width as f64 / 2.0_f64; // 32.0
     let cy = height as f64 * 0.58_f64; // ~37.0 - center of the bottom bulb
@@ -31,10 +45,15 @@ pub fn create_water_drop_rgba() -> (Vec<u8>, u32, u32) {
                 let dist_hl = (dx * dx + dy * dy).sqrt();
                 if dist_hl < 10.0 {
                     let factor = 1.0 - (dist_hl / 10.0).min(1.0);
-                    let bright = factor * 0.6;
-                    rgba[idx] = (rgba[idx] as f64 + (highlight_r as f64 - rgba[idx] as f64) * bright) as u8;
-                    rgba[idx + 1] = (rgba[idx + 1] as f64 + (highlight_g as f64 - rgba[idx + 1] as f64) * bright) as u8;
-                    rgba[idx + 2] = (rgba[idx + 2] as f64 + (highlight_b as f64 - rgba[idx + 2] as f64) * bright) as u8;
+                    let bright = factor * brightness;
+                    rgba[idx] =
+                        (rgba[idx] as f64 + (hl_r as f64 - rgba[idx] as f64) * bright) as u8;
+                    rgba[idx + 1] = (rgba[idx + 1] as f64
+                        + (hl_g as f64 - rgba[idx + 1] as f64) * bright)
+                        as u8;
+                    rgba[idx + 2] = (rgba[idx + 2] as f64
+                        + (hl_b as f64 - rgba[idx + 2] as f64) * bright)
+                        as u8;
                 }
 
                 // Add a darker edge at the bottom-right for depth

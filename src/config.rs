@@ -10,6 +10,8 @@ pub struct Config {
     pub snooze_minutes: u64,
     /// Water amount per drink in ml
     pub water_amount_ml: u64,
+    /// Daily drinking goal in cups
+    pub daily_goal_cups: u64,
     /// Hour (0-23) to start reminding
     pub start_hour: u8,
     /// Hour (0-23) to stop reminding
@@ -24,6 +26,7 @@ impl Default for Config {
             interval_minutes: 30,
             snooze_minutes: 5,
             water_amount_ml: 250,
+            daily_goal_cups: 8,
             start_hour: 9,
             end_hour: 22,
             show_running_time: true,

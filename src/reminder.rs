@@ -2,7 +2,9 @@ use chrono::Local;
 use chrono::Timelike;
 #[cfg(not(target_os = "macos"))]
 use notify_rust::Notification;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
@@ -30,14 +32,13 @@ impl Reminder {
         interval_secs: u64,
         start_hour: u8,
         end_hour: u8,
+        dnd: Arc<AtomicBool>,
     ) -> Self {
         let (tx, rx) = mpsc::channel();
         let mut interval = Duration::from_secs(interval_secs);
 
         thread::spawn(move || {
-            log::info!(
-                "提醒已启动：间隔={interval_secs}秒，时段={start_hour}:00–{end_hour}:00"
-            );
+            log::info!("提醒已启动：间隔={interval_secs}秒，时段={start_hour}:00–{end_hour}:00");
 
             loop {
                 let now = Local::now();
@@ -46,8 +47,15 @@ impl Reminder {
                 if hour >= start_hour && hour < end_hour {
                     match rx.recv_timeout(interval) {
                         Err(mpsc::RecvTimeoutError::Timeout) => {
+                            if dnd.load(Ordering::Relaxed) {
+                                log::debug!("勿扰模式中，跳过提醒");
+                                continue;
+                            }
                             log::info!("💧 该喝水了！");
-                            show_notification("💧 该喝水了！", "保持水分充足，身体才能发挥最佳状态。");
+                            show_notification(
+                                "💧 该喝水了！",
+                                "保持水分充足，身体才能发挥最佳状态。",
+                            );
                             let _ = proxy.send_event(UserEvent::TimeToDrink);
                         }
                         Ok(ReminderCommand::Reset) => {
@@ -56,9 +64,17 @@ impl Reminder {
                         }
                         Ok(ReminderCommand::Snooze(minutes)) => {
                             log::info!("⏰ 暂停 {minutes} 分钟");
-                            show_snooze_notification(minutes);
+                            if !dnd.load(Ordering::Relaxed) {
+                                show_snooze_notification(minutes);
+                            }
                             thread::sleep(Duration::from_secs(minutes * 60));
-                            show_notification("💧 该喝水了！", "保持水分充足，身体才能发挥最佳状态。");
+                            if dnd.load(Ordering::Relaxed) {
+                                continue;
+                            }
+                            show_notification(
+                                "💧 该喝水了！",
+                                "保持水分充足，身体才能发挥最佳状态。",
+                            );
                             let _ = proxy.send_event(UserEvent::TimeToDrink);
                         }
                         Ok(ReminderCommand::ChangeInterval(secs)) => {
@@ -66,8 +82,9 @@ impl Reminder {
                             interval = Duration::from_secs(secs);
                             continue;
                         }
-                        Ok(ReminderCommand::Quit)
-                        | Err(mpsc::RecvTimeoutError::Disconnected) => break,
+                        Ok(ReminderCommand::Quit) | Err(mpsc::RecvTimeoutError::Disconnected) => {
+                            break
+                        }
                     }
                 } else {
                     match rx.recv_timeout(Duration::from_secs(60)) {
@@ -94,7 +111,9 @@ impl Reminder {
     }
 
     pub fn change_interval(&self, interval_secs: u64) {
-        let _ = self.sender.send(ReminderCommand::ChangeInterval(interval_secs));
+        let _ = self
+            .sender
+            .send(ReminderCommand::ChangeInterval(interval_secs));
     }
 
     pub fn quit(&self) {
@@ -119,7 +138,7 @@ fn osascript_notify(summary: &str, body: &str) {
     let escaped_body = escape_applescript(body);
     let escaped_summary = escape_applescript(summary);
     let result = std::process::Command::new("osascript")
-        .args(&[
+        .args([
             "-e",
             &format!(
                 r#"display notification "{}" with title "{}" sound name "Ping""#,
@@ -133,10 +152,7 @@ fn osascript_notify(summary: &str, body: &str) {
             if out.status.success() {
                 log::info!("通过 osascript 发送通知");
             } else {
-                log::error!(
-                    "osascript 失败: {}",
-                    String::from_utf8_lossy(&out.stderr)
-                );
+                log::error!("osascript 失败: {}", String::from_utf8_lossy(&out.stderr));
             }
         }
         Err(e) => log::error!("osascript 错误: {e}"),

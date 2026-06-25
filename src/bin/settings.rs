@@ -8,8 +8,8 @@
 use iced::theme::Palette;
 use iced::widget::{column, container, row, text, text_input};
 use iced::{
-    application, window, window::icon as window_icon, Alignment, Background, Border, Color, Element,
-    Event, Font, Length, Shadow, Subscription, Task, Theme, Vector,
+    application, window, window::icon as window_icon, Alignment, Background, Border, Color,
+    Element, Event, Font, Length, Shadow, Subscription, Task, Theme, Vector,
 };
 
 use drink_water_rs2::config::Config;
@@ -42,7 +42,7 @@ fn main() -> iced::Result {
         .theme(|_| water_theme())
         .subscription(subscription)
         .window(window::Settings {
-            size: iced::Size::new(380.0, 530.0),
+            size: iced::Size::new(380.0, 580.0),
             icon: make_window_icon(),
             exit_on_close_request: false,
             ..window::Settings::default()
@@ -102,6 +102,7 @@ struct State {
     interval_str: String,
     snooze_str: String,
     water_amount_str: String,
+    daily_goal_str: String,
     start_hour_str: String,
     end_hour_str: String,
     error_message: Option<String>,
@@ -117,6 +118,7 @@ enum Message {
     IntervalChanged(String),
     SnoozeChanged(String),
     WaterAmountChanged(String),
+    DailyGoalChanged(String),
     StartHourChanged(String),
     EndHourChanged(String),
     Focused,
@@ -140,6 +142,11 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
         }
         Message::WaterAmountChanged(v) => {
             state.water_amount_str = v;
+            state.error_message = None;
+            Task::none()
+        }
+        Message::DailyGoalChanged(v) => {
+            state.daily_goal_str = v;
             state.error_message = None;
             Task::none()
         }
@@ -184,15 +191,51 @@ fn update(state: &mut State, message: Message) -> Task<Message> {
 // ── View ───────────────────────────────────────────────────────────────────
 
 fn view<'a>(state: &'a State) -> Element<'a, Message> {
-    // ── Form card ───────────────────────────────────────────────────────────
     let form = column![
-        field("提醒间隔", "30", &state.interval_str, "分钟", Message::IntervalChanged),
-        field("稍后提醒", "5", &state.snooze_str, "分钟", Message::SnoozeChanged),
-        field("每次喝水量", "250", &state.water_amount_str, "ml", Message::WaterAmountChanged),
-        field("开始提醒时间", "9", &state.start_hour_str, "点", Message::StartHourChanged),
-        field("结束提醒时间", "22", &state.end_hour_str, "点", Message::EndHourChanged),
+        field(
+            "提醒间隔",
+            "30",
+            &state.interval_str,
+            "分钟",
+            Message::IntervalChanged
+        ),
+        field(
+            "稍后提醒",
+            "5",
+            &state.snooze_str,
+            "分钟",
+            Message::SnoozeChanged
+        ),
+        field(
+            "每次喝水量",
+            "250",
+            &state.water_amount_str,
+            "ml",
+            Message::WaterAmountChanged
+        ),
+        field(
+            "每日目标",
+            "8",
+            &state.daily_goal_str,
+            "杯",
+            Message::DailyGoalChanged
+        ),
+        field(
+            "开始提醒时间",
+            "9",
+            &state.start_hour_str,
+            "点",
+            Message::StartHourChanged
+        ),
+        field(
+            "结束提醒时间",
+            "22",
+            &state.end_hour_str,
+            "点",
+            Message::EndHourChanged
+        ),
     ]
-    .spacing(16);
+    .spacing(14);
 
     let card = container(form)
         .padding(22)
@@ -213,6 +256,8 @@ fn view<'a>(state: &'a State) -> Element<'a, Message> {
         .center_y(Length::Fill)
         .into()
 }
+
+// ── Styling ────────────────────────────────────────────────────────────────
 
 /// Muted grey used for secondary labels.
 fn muted() -> Color {
@@ -236,11 +281,12 @@ fn field<'a>(
     let input_row: Element<Message> = if unit.is_empty() {
         input.into()
     } else {
-        // Fixed-width unit slot keeps every input box the same width
-        // regardless of how wide the unit label ("分钟" / "ml" / "点") is.
         row![
             input,
-            text(unit).size(13).color(muted()).width(Length::Fixed(32.0)),
+            text(unit)
+                .size(13)
+                .color(muted())
+                .width(Length::Fixed(32.0)),
         ]
         .spacing(8)
         .align_y(Alignment::Center)
@@ -294,6 +340,7 @@ impl State {
             interval_str: cfg.interval_minutes.to_string(),
             snooze_str: cfg.snooze_minutes.to_string(),
             water_amount_str: cfg.water_amount_ml.to_string(),
+            daily_goal_str: cfg.daily_goal_cups.to_string(),
             start_hour_str: cfg.start_hour.to_string(),
             end_hour_str: cfg.end_hour.to_string(),
             config: cfg,
@@ -324,6 +371,10 @@ fn try_save(state: &mut State) -> Result<(), String> {
         .water_amount_str
         .parse()
         .map_err(|_| "喝水量必须是正数".to_string())?;
+    let goal: u64 = state
+        .daily_goal_str
+        .parse()
+        .map_err(|_| "每日目标必须是正数".to_string())?;
     let start: u8 = state
         .start_hour_str
         .parse()
@@ -339,8 +390,11 @@ fn try_save(state: &mut State) -> Result<(), String> {
     if snooze < 1 {
         return Err("稍后提醒至少 1 分钟".into());
     }
-    if amount < 1 || amount > 5000 {
+    if !(1..=5000).contains(&amount) {
         return Err("喝水量必须在 1-5000 ml 之间".into());
+    }
+    if !(1..=100).contains(&goal) {
+        return Err("每日目标必须在 1-100 杯之间".into());
     }
     if start > 23 {
         return Err("开始时间必须在 0-23 之间".into());
@@ -355,6 +409,7 @@ fn try_save(state: &mut State) -> Result<(), String> {
     state.config.interval_minutes = interval;
     state.config.snooze_minutes = snooze;
     state.config.water_amount_ml = amount;
+    state.config.daily_goal_cups = goal;
     state.config.start_hour = start;
     state.config.end_hour = end;
     state.config.save();
