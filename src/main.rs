@@ -3,6 +3,7 @@
 use std::path::PathBuf;
 use std::time::Duration;
 
+use chrono::Local;
 use tao::event_loop::{ControlFlow, EventLoopBuilder};
 use tao::event::{Event, StartCause};
 #[cfg(target_os = "macos")]
@@ -122,6 +123,11 @@ fn main() {
     let config_path = config::Config::path();
     let mut last_config_mtime = config_path.metadata().ok().and_then(|m| m.modified().ok());
 
+    // ── Date Watcher ────────────────────────────────────────────────────────
+    // Track the current date so we can refresh the status item when the day
+    // rolls over (otherwise the menu text would still show yesterday's count).
+    let mut last_date = Local::now().date_naive();
+
     // ── Event Loop ─────────────────────────────────────────────────────────
     event_loop.run(move |event, window_target, control_flow| {
         *control_flow = ControlFlow::Poll;
@@ -133,6 +139,16 @@ fn main() {
                 log::info!("事件循环就绪 — 托盘图标已显示");
             }
             Event::MainEventsCleared => {
+                // Check if the date has rolled over.
+                let today = Local::now().date_naive();
+                if today != last_date {
+                    log::info!("📅 新的一天 ({})，重置统计数据", today);
+                    last_date = today;
+                    stats = DrinkStats::load_today();
+                    let amount = config::Config::load().water_amount_ml;
+                    status_item.set_text(&format_status(stats.today_count(), amount));
+                }
+
                 // Check config file for changes (throttled by the ~100ms poll rate).
                 if let Ok(meta) = config_path.metadata() {
                     if let Ok(mtime) = meta.modified() {
