@@ -23,7 +23,7 @@ RESOURCES="${CONTENTS}/Resources"
 
 # 1. build both binaries + generate icons
 echo "==> Building binaries…"
-cargo build --release --bin drink-water-rs2 --bin drink-water-settings
+cargo build --release --bin drink-water-rs2 --bin drink-water-settings --bin drink-water-stats
 
 echo "==> Generating icon…"
 cargo run --release --bin gen-icons
@@ -36,6 +36,7 @@ mkdir -p "${MACOS}" "${RESOURCES}"
 # 3. copy binaries
 cp "target/release/drink-water-rs2"       "${MACOS}/drink-water-rs2"
 cp "target/release/drink-water-settings"   "${MACOS}/drink-water-settings"
+cp "target/release/drink-water-stats"      "${MACOS}/drink-water-stats"
 
 # 4. copy icon
 cp assets/icon.png "${RESOURCES}/icon.png"
